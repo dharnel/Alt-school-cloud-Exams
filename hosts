@@ -1,0 +1,6 @@
+webserver:
+  hosts: 142.93.41.100
+  
+  vars:
+    ansible_user: root    
+

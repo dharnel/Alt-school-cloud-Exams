@@ -1,0 +1,283 @@
+---
+
+- hosts: all
+  become: true
+  vars_files:
+    - default.yml
+
+  tasks:
+    - name: Install prerequisites
+      apt: name={{ item }} state=latest force_apt_get=yes
+      loop: [ 'aptitude', 'software-properties-common', 'ca-certificates', 'apt-transport-https']
+
+  #Apache Configuration
+    - name: Install LAMP Packages
+      apt: name={{ item }} update_cache=yes state=latest
+      loop: [ 'apache2', 'mysql-server', 'php8.1', 'php8.1-mysql', 'libapache2-mod-php', 'git', 'curl', 'apache2-utils', 'mysql-client',
+ 'php8.1-cli', 'mcrypt', 'php8.1-intl', 'php8.1-zip', 'php8.1-xsl', 'php8.1-mbstring', 'php8.1-xmlrpc', 'php8.1-soap', 'php8.1-gd', 'php8.1-cgi',
+'libapache2-mod-php' ]
+
+    - name: install python3
+      package:
+        name: python3
+        state: present
+
+    - name: install python3-pip
+      package:
+        name: python3-pip
+        state: present
+
+    - name: Debug PATH
+      debug: msg="{{ lookup('env','PATH') }}"
+
+    - name: Debug root PATH
+      debug: msg="{{ lookup('env','PATH') }}"
+      become: 'yes'
+
+    - name: make sure pymsql is present
+      become: true
+      environment:
+        PATH: "/usr/local/bin/pip3"
+      pip:
+        name: pymysql
+        state: present
+
+    - name: Create document root
+      file:
+        path: "/var/www/niellaravelapp1"
+        state: directory
+        owner: "{{ app_user }}"
+        mode: '755'
+
+    - name: Set up Apache virtualhost
+      template:
+        src: "files/apache.conf.j2"
+        dest: "/etc/apache2/sites-available/{{ http_conf }}"
+      notify: Reload Apache
+
+    - name: Disable default Apache site
+      shell: /usr/sbin/a2dissite 000-default.conf
+      when: disable_default
+      notify: Reload Apache
+
+    - name: Enable new site
+      shell: /usr/sbin/a2ensite {{ http_conf }}
+      notify: Reload Apache
+
+    - name: Setting up env file
+      template:
+        src: "files/.env"
+        dest: "/etc/apache2/sites-available/{{ env }}"
+      notify: Reload Apache
+
+  # MySQL Configuration
+
+    - name: create /root/.my.cnf with password credentials
+      blockinfile:
+        path: /root/.my.cnf
+        block: |
+          [client]
+          user=root
+          password={{ mysql_root_password }}
+
+          [mysql]
+          user=root
+          password={{ mysql_root_password }}
+
+          [mysqldump]
+          user=root
+          password={{ mysql_root_password }}
+
+          [mysqldiff]
+          user=root
+          password={{ mysql_root_password }}
+        create: yes
+
+    - name: "Mysql Configuration - Resetting RootPassword"
+      mysql_user:
+        login_user: root
+        login_password: ''
+        name: root
+        host_all: yes
+        password: "{{mysql_root_password}}"
+
+    - name: Removes all anonymous user accounts
+      mysql_user:
+        name: ''
+        host_all: yes
+        state: absent
+        login_user: root
+        login_password: "{{ mysql_root_password }}"
+
+    - name: Removes the MySQL test database
+      mysql_db:
+        name: test
+        state: absent
+        login_user: root
+        login_password: "{{ mysql_root_password }}"
+
+    - name: Creates database
+      mysql_db:
+        name: laraveluser1database
+        state: present
+        login_unix_socket: /var/run/mysqld/mysqld.sock
+
+    - name: Creates User and assign to database
+      mysql_user:
+        name: laraveluser1
+        state: present
+        password: "{{ mysql_root_password }}"
+        priv: "*.*:ALL,GRANT"
+        login_unix_socket: /var/run/mysqld/mysqld.sock
+
+  # UFW Configuration
+    - name: "UFW - Allow HTTP on port {{ http_port }}"
+      ufw:
+        rule: allow
+        port: "{{ http_port }}"
+        proto: tcp
+
+    - name: UFW - Allow HTTP on port 22
+      ufw:
+        rule: allow
+        port: 22
+        proto: tcp
+
+    - name: UFW - Allow HTTP on port 443
+      ufw:
+        rule: allow
+        port: 443
+        proto: tcp
+
+  # Install composer
+
+    - name: Validate Composer checksum
+      get_url:
+        checksum: "sha384: 55ce33d7678c5a611085589f1f3ddf8b3c52d662cd01d4ba75c0ee0459970c2200a51f492d557530c71c15d8dba01eae."
+        dest: /usr/src/
+        url: https://getcomposer.org/installer
+      become: yes
+
+    - name: Download and install Composer
+      shell: curl -sS https://getcomposer.org/installer | php
+      args:
+        chdir: /usr/src/
+        creates: /usr/local/bin/composer
+        warn: false
+      become: yes
+
+    - name: Add Composer to global path
+      copy:
+        dest: /usr/local/bin/composer
+        group: root
+        mode: '0775'
+        owner: root
+        src: /usr/src/composer.phar
+        remote_src: yes
+      become: yes
+
+    - name: Clone laravel app from github repository
+      git:
+        repo: https://github.com/f1amy/laravel-realworld-example-app.git
+        dest: ~/niellaravelapp1
+        clone: yes
+        update: yes
+
+    - name: Composer Install
+      become: yes
+      composer:
+        command: install
+        global_command: false
+        working_dir: ~/niellaravelapp1/
+      environment:
+        COMPOSER_NO_INTERACTION: "1"
+        COMPOSER_ALLOW_SUPERUSER: "1"
+
+    - name: move laravel repo from home directory to apache directory
+      copy:
+        dest: /var/www/
+        group: "{{ app_user }}"
+        mode: '0775'
+        owner: "{{ app_user }}"
+        src: ~/niellaravelapp1
+        remote_src: yes
+      become: yes
+
+    - name: change permissions of app directory
+      file:
+        path: "/var/www/niellaravelapp1/"
+        state: directory
+        owner: "{{ app_user }}"
+        mode: '0755'
+
+    - name: change permissions of storage directory
+      file:
+        path: "/var/www/niellaravelapp1/storage/"
+        state: directory
+        owner: "{{ app_user }}"
+        mode: '0755'
+
+    - name: Setting up env file
+      copy:
+        src: "files/.env"
+        dest: "/var/www/niellaravelapp1/"
+        group: "{{ app_user }}"
+        mode: '0775'
+        owner: "{{ app_user }}"
+      notify: Reload Apache
+
+    - name: Generate key
+      shell: php artisan key:generate
+      args:
+        chdir: "/var/www/niellaravelapp1/"
+      register: migrations_output
+
+    - name: Run migrations
+      shell: php artisan migrate:fresh
+      args:
+        chdir: "/var/www/niellaravelapp1/"
+      register: migrations_output
+      become: yes
+
+    - name: Enable mod_rewrite
+      apache2_module:
+        state: present
+        name: rewrite
+
+    - name: Allow display
+      copy:
+        src: "files/web.php"
+        dest: "/var/www/niellaravelapp1/routes/web.php"
+        mode: '0775'
+        owner: "{{ app_user }}"
+        group: "{{ app_user }}"
+
+    - name: Install software-properties-common
+      apt:
+        name: software-properties-common
+        state: present
+        update_cache: yes
+      become: true
+
+    - name: Install certbot
+      apt:
+        name: python3-certbot-apache
+        state: present
+        update_cache: yes
+      become: true
+
+#    - name: Generate certificate
+#      shell: "certbot --apache -d miniproject.niellaravelapp.me -m dharnel2863@gmail.com --agree-tos --force-interactive "
+#      become: true
+
+
+  handlers:
+    - name: Reload Apache
+      service:
+        name: apache2
+        state: reloaded
+
+    - name: Restart Apache
+      service:
+        name: apache2
+        state: restarted

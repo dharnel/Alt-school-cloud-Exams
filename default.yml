@@ -1,0 +1,12 @@
+---
+mysql_root_password: "12345"
+app_user: "www-data"
+http_host: "niellaravelapp.me"
+http_conf: "niellaravelapp.conf"
+http_port: "80"
+disable_default: true
+env: ".env"
+email: dharnel2863@gmail.com
+certbot_extra_args: --standalone --no-eff-email -n --agree-tos --keep --expand  --preferred-challenges tls-sni --test-cert
+renew_hook: systemctl reload nginx
+domain: niellaravelapp.me
