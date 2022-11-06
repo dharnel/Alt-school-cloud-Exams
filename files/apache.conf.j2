@@ -1,10 +1,8 @@
 <VirtualHost *:80>
     ServerAdmin dharnel2863@gmail.com
-    ServerName niellaravelapp
-    ServerAlias www.niellaravelapp.me
+    ServerName miniproject.niellaravelapp.me
+    ServerAlias www.miniproject.niellaravelapp.me
     DocumentRoot /var/www/niellaravelapp1/public
-    ErrorLog ${APACHE_LOG_DIR}/error.log
-    CustomLog ${APACHE_LOG_DIR}/access.log combined
 
     <Directory /var/www/niellaravelapp1>
           Options Indexes FollowSymLinks MultiViews
@@ -12,30 +10,11 @@
           allow from all
           Require all granted
     </Directory>
+    
 
-    <IfModule mod_dir.c>
-        DirectoryIndex index.php index.html index.cgi index.pl  index.xhtml index.htm
-    </IfModule>
-
-</VirtualHost>
-
-<VirtualHost *:443>
-    ServerAdmin dharnel2863@gmail.com
-    ServerName niellaravelapp
-    ServerAlias www.niellaravelapp.me
-    DocumentRoot /var/www/niellaravelapp1/public
     ErrorLog ${APACHE_LOG_DIR}/error.log
     CustomLog ${APACHE_LOG_DIR}/access.log combined
 
-    <Directory /var/www/niellaravelapp1>
-          Options Indexes FollowSymLinks MultiViews
-          AllowOverride All
-          allow from all
-          Require all granted
-    </Directory>
-
-    <IfModule mod_dir.c>
-        DirectoryIndex index.php index.html index.cgi index.pl  index.xhtml index.htm
-    </IfModule>
-
 </VirtualHost>
+
+

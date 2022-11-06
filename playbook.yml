@@ -13,9 +13,9 @@
   #Apache Configuration
     - name: Install LAMP Packages
       apt: name={{ item }} update_cache=yes state=latest
-      loop: [ 'apache2', 'mysql-server', 'php8.1', 'php8.1-mysql', 'libapache2-mod-php', 'git', 'curl', 'apache2-utils', 'mysql-client',
+      loop: [ 'apache2', 'mysql-server', 'php8.1', 'php8.1-mysql', 'libapache2-mod-php', 'git', 'php8.1-curl', 'apache2-utils', 'mysql-client',
  'php8.1-cli', 'mcrypt', 'php8.1-intl', 'php8.1-zip', 'php8.1-xsl', 'php8.1-mbstring', 'php8.1-xmlrpc', 'php8.1-soap', 'php8.1-gd', 'php8.1-cgi',
-'libapache2-mod-php' ]
+'libapache2-mod-php8.1', 'php8.1-bcmath','php8.1-tokenizer' ]
 
     - name: install python3
       package:
@@ -100,6 +100,7 @@
         name: root
         host_all: yes
         password: "{{mysql_root_password}}"
+        login_unix_socket: /var/run/mysqld/mysqld.sock
 
     - name: Removes all anonymous user accounts
       mysql_user:
@@ -182,6 +183,7 @@
         dest: ~/niellaravelapp1
         clone: yes
         update: yes
+        force: yes
 
     - name: Composer Install
       become: yes
@@ -226,18 +228,27 @@
         owner: "{{ app_user }}"
       notify: Reload Apache
 
+    - name: Composer Update
+      become: yes
+      composer:
+        command: update
+        working_dir: ~/niellaravelapp1/
+      environment:
+        COMPOSER_NO_INTERACTION: "1"
+        COMPOSER_ALLOW_SUPERUSER: "1"
+
+    - name: Run migrations
+      shell: sudo php artisan migrate:fresh --seed
+      args:
+        chdir: "/var/www/niellaravelapp1/"
+      register: migrations_output
+      become: yes
+
     - name: Generate key
       shell: php artisan key:generate
       args:
         chdir: "/var/www/niellaravelapp1/"
       register: migrations_output
-
-    - name: Run migrations
-      shell: php artisan migrate:fresh
-      args:
-        chdir: "/var/www/niellaravelapp1/"
-      register: migrations_output
-      become: yes
 
     - name: Enable mod_rewrite
       apache2_module:
@@ -266,9 +277,18 @@
         update_cache: yes
       become: true
 
-#    - name: Generate certificate
-#      shell: "certbot --apache -d miniproject.niellaravelapp.me -m dharnel2863@gmail.com --agree-tos --force-interactive "
-#      become: true
+    - name: Check if certificate already exists
+      stat:
+        path: /etc/letsencrypt/live/miniproject.niellaravelapp.me/cert.pem
+      register: letsencrypt_cert
+      with_items:
+        - {servername: "miniproject.niellaravelapp.me", documentroot: "/var/www/niellaravelapp1"}
+
+    - name: Generate certificate
+      shell: "certbot --apache -d miniproject.niellaravelapp.me -m dharnel2863@gmail.com --agree-tos --force-interactive "
+      become: true
+      with_items: "{{ letsencrypt_cert.results }}"
+      when: item.stat.exists == False
 
 
   handlers:
